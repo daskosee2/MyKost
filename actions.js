@@ -391,22 +391,17 @@ const A={
   },
 
   clearDemo(){
-    ask('Hapus semua penyewa, pembayaran, transaksi, dan maintenance demo? Unit tetap ada dan bisa Anda edit.',()=>{
-      S.tenants=[];
-      S.payments=[];
-      S.tx=[];
-      S.maint=[];
-      S.demo=false;
+  ask('Hapus seluruh data demo? Semua unit, penyewa, pembayaran, transaksi, dan maintenance akan dihapus.',()=>{
+    S.units=[];
+    S.tenants=[];
+    S.payments=[];
+    S.tx=[];
+    S.maint=[];
+    S.demo=false;
 
-      S.units.forEach(u=>{
-        u.alamat='';
-        u.fasilitas='';
-        u.status='Kosong';
-      });
-
-      commit('Data demo dihapus');
-    });
-  }
+    commit('Semua data demo berhasil dihapus');
+  });
+}
 };
 
 /* ---------- simpan pembayaran ---------- */
