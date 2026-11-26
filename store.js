@@ -131,7 +131,7 @@ function seed(){
   };
 }
 
-/* ---------- memuat data ---------- */
+/* ---------- memuat data aplikasi ---------- */
 
 async function load(){
   try{
@@ -155,7 +155,7 @@ async function load(){
         return cloudData.state;
       }
 
-      // Jika belum ada data cloud, coba migrasi data lokal
+      // Migrasi data lokal jika tersedia
       const local=localStorage.getItem('kontrakanku');
 
       if(local){
@@ -183,7 +183,7 @@ async function load(){
     mode='local';
   }
 
-  // Cadangan penyimpanan lokal
+  // Cadangan data lokal
   try{
     const j=localStorage.getItem('kontrakanku');
 
@@ -196,7 +196,7 @@ async function load(){
   return null;
 }
 
-/* ---------- menyimpan data ---------- */
+/* ---------- menyimpan data aplikasi ---------- */
 
 function persist(){
   clearTimeout(tmr);
@@ -211,23 +211,23 @@ function persist(){
 
       const session=data.session;
 
-      if(session){
-        const {error}=await supabaseClient
-          .from('app_state')
-          .upsert({
-            owner_id:session.user.id,
-            state:JSON.parse(j),
-            updated_at:new Date().toISOString()
-          });
-
-        if(error)throw error;
-
-        mode='cloud';
-
-      }else{
+      if(!session){
         localStorage.setItem('kontrakanku',j);
         mode='local';
+        return;
       }
+
+      const {error}=await supabaseClient
+        .from('app_state')
+        .upsert({
+          owner_id:session.user.id,
+          state:JSON.parse(j),
+          updated_at:new Date().toISOString()
+        });
+
+      if(error)throw error;
+
+      mode='cloud';
 
       await savePhotos();
 
@@ -236,7 +236,6 @@ function persist(){
 
       try{
         localStorage.setItem('kontrakanku',j);
-        mode='local';
       }catch(localError){
         console.error('Gagal menyimpan cadangan lokal:',localError);
       }
@@ -247,35 +246,93 @@ function persist(){
   },400);
 }
 
-/* ---------- penyimpanan foto ---------- */
+/* ---------- menyimpan foto ke Supabase Storage ---------- */
 
 async function savePhotos(){
+  const {data,error:sessionError}=await supabaseClient.auth.getSession();
+
+  if(sessionError)throw sessionError;
+
+  const session=data.session;
+
+  if(!session)return;
+
+  const ownerId=session.user.id;
+
   for(const u of S.units){
     const f=u.foto||'';
+    const old=PHV[u.id]||'';
 
-    if((PHV[u.id]||'')===f)continue;
+    if(f===old)continue;
 
-    if(f){
-      localStorage.setItem('kk-foto-'+u.id,f);
-    }else{
+    const path=ownerId+'/'+u.id+'.jpg';
+
+    // Hapus foto dari Storage
+    if(!f){
+      const {error}=await supabaseClient.storage
+        .from('unit-photos')
+        .remove([path]);
+
+      if(error)throw error;
+
+      PHV[u.id]='';
       localStorage.removeItem('kk-foto-'+u.id);
+      continue;
     }
 
+    // Ubah foto menjadi file JPEG
+    const blob=await fetch(f).then(response=>{
+      if(!response.ok)throw new Error('Gagal membaca foto');
+      return response.blob();
+    });
+
+    const {error}=await supabaseClient.storage
+      .from('unit-photos')
+      .upload(path,blob,{
+        contentType:'image/jpeg',
+        upsert:true
+      });
+
+    if(error)throw error;
+
     PHV[u.id]=f;
+    localStorage.removeItem('kk-foto-'+u.id);
   }
 }
 
+/* ---------- memuat foto dari Supabase Storage ---------- */
+
 async function loadPhotos(){
+  const {data,error:sessionError}=await supabaseClient.auth.getSession();
+
+  if(sessionError)throw sessionError;
+
+  const session=data.session;
+
+  if(!session)return;
+
+  const ownerId=session.user.id;
+
   await Promise.all(S.units.map(async u=>{
     try{
-      const f=localStorage.getItem('kk-foto-'+u.id)||'';
+      const path=ownerId+'/'+u.id+'.jpg';
 
-      if(f){
-        u.foto=f;
-        PHV[u.id]=f;
+      const {data,error}=await supabaseClient.storage
+        .from('unit-photos')
+        .createSignedUrl(path,3600);
+
+      if(error){
+        console.warn('Foto unit belum tersedia:',u.nama);
+        return;
       }
+
+      if(data&&data.signedUrl){
+        u.foto=data.signedUrl;
+        PHV[u.id]=data.signedUrl;
+      }
+
     }catch(e){
-      console.error('Gagal memuat foto:',e);
+      console.error('Gagal memuat foto:',u.nama,e);
     }
   }));
 }
@@ -311,7 +368,7 @@ function shrink(f){
         }
 
         d.length>200000
-          ?no(new Error('besar'))
+          ?no(new Error('Ukuran foto terlalu besar'))
           :ok(d);
       };
 
