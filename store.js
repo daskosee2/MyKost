@@ -270,7 +270,7 @@ async function savePhotos(){
     // Hapus foto dari Storage
     if(!f){
       const {error}=await supabaseClient.storage
-        .from('unit-photos')
+        .from('unit-photo')
         .remove([path]);
 
       if(error)throw error;
@@ -287,7 +287,7 @@ async function savePhotos(){
     });
 
     const {error}=await supabaseClient.storage
-      .from('unit-photos')
+      .from('unit-photo')
       .upload(path,blob,{
         contentType:'image/jpeg',
         upsert:true
@@ -318,7 +318,7 @@ async function loadPhotos(){
       const path=ownerId+'/'+u.id+'.jpg';
 
       const {data,error}=await supabaseClient.storage
-        .from('unit-photos')
+        .from('unit-photo')
         .createSignedUrl(path,3600);
 
       if(error){
